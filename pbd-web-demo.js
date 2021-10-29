@@ -271,6 +271,8 @@ function setupScene()
 
     doc.getElementById("force").innerHTML = 0.0.toFixed(3);		
     doc.getElementById("aforce").innerHTML = 0.0.toFixed(3);		
+    doc.getElementById("mu_s_slider").setAttribute("value", 100*mu_s);		
+    doc.getElementById("mu_k_slider").setAttribute("value", 100*mu_k);		
 }
 
 // draw -------------------------------------------------------
