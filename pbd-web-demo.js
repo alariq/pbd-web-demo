@@ -247,6 +247,7 @@ function setupScene()
     var offsetY = physicsScene.boundaryCenter.y + physicsScene.numRows*particleDiameter*0.5;
 
     offsetX += particleRadius * 50;
+    offsetY -= particleRadius * 10;
 
     var idx = 0;
     for (var y = 0; y < physicsScene.numRows; y++) {
@@ -352,9 +353,15 @@ function solveBoundaryConstraint()
             dp_t.subtractVectors(path, dp_n);
             var dp_t_len = dp_t.length();
             // part of velocity update pass
-            if (dp_t_len  < mu_s * path.length()) {
+
+            if (dp_t_len  < mu_s * dp) {
                 particles.pos[2*i + 0] -= dp_t.x;
                 particles.pos[2*i + 1] -= dp_t.y;
+            }
+            else{
+                var k = Math.min(mu_k * dp.length() / dp_t_len, 1);
+                particles.pos[2*i + 0] -= k*dp_t.x;
+                particles.pos[2*i + 1] -= k*dp_t.y;
             }
 
             doc.getElementById("dp_t_len").innerHTML = dp_t_len.toFixed(8);		

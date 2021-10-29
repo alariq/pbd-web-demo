@@ -60,9 +60,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	<button class="button" onclick="setupScene()">Restart</button>
 	<button class="button" onclick="run()">Run</button>
 	<button class="button" onclick="step()">Step</button>
+    <span style = "margin: 0px 0px 0px 20px;">mu_s</span>
+		<td>
+			<input type = "range" min = "0" max = "100" value = "0" id = "mu_s_slider" class = "slider">
+		</td>
     <span style = "margin: 0px 0px 0px 20px;">mu_k</span>
 		<td>
-			<input type = "range" min = "0" max = "10" value = "0" id = "mu_s_slider" class = "slider">
+			<input type = "range" min = "0" max = "100" value = "0" id = "mu_k_slider" class = "slider">
 		</td>
 	<br>
 	PBD <span id = "force">0</span>  &emsp; Analytic <span id ="aforce">0</span>
@@ -73,7 +77,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	
 	<script>
 		document.getElementById("mu_s_slider").oninput = function() {
-			mu_s = this.value / 10;	
+			mu_s = this.value / 100;	
+		}
+		document.getElementById("mu_k_slider").oninput = function() {
+			mu_k = this.value / 100;	
 		}
 		var cc = document.getElementById("myCanvas")
 		setupGlobals(cc, window, document);
