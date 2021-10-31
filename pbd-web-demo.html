@@ -71,7 +71,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	<br>
 	PBD <span id = "force">0</span>  &emsp; Analytic <span id ="aforce">0</span>
 	<br>
-	dp_t_len: <span id = "dp_t_len">0</span> 
+	dp_t_len: <span id = "dp_t_len">0</span> &emsp; mu_k: <span id = "mu_k">0</span> 
 
 	<canvas id="myCanvas"></canvas>
 	
@@ -81,6 +81,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		}
 		document.getElementById("mu_k_slider").oninput = function() {
 			mu_k = this.value / 100;	
+			document.getElementById("mu_k").innerHTML = mu_k;
 		}
 		var cc = document.getElementById("myCanvas")
 		setupGlobals(cc, window, document);

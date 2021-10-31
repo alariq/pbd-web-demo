@@ -95,6 +95,30 @@ class Vector2 {
     perp() {
         return new Vector2(-this.y, this.x);
     }
+
+    rotate(m) {
+        var x = m.e00 * this.x + m.e01 * this.y;
+	    var y = m.e10 * this.x + m.e11 * this.y;
+        this.x = x;
+        this.y = y;
+    }
+}
+
+class Mat2 {
+    constructor(e00_, e01_, e10_, e11_) {
+        this.e00 = e00_;
+        this.e01 = e01_;
+        this.e10 = e10_;
+        this.e11 = e11_;
+    }
+
+    static rotation(angle) {
+ 	    var cosA = Math.cos(angle);
+        var sinA = Math.sin(angle);
+
+	    return new Mat2(cosA, -sinA, sinA,  cosA);
+    }
+
 }
 
 class ConstraintsArray {
@@ -176,7 +200,7 @@ class ConstraintsArray {
 
 
 class Vector {
-    constructor(size, creator_fp) { 
+    constructor(size) { 
         this.vals = new Int32Array(size); 
         this.maxSize = size;
         this.size = 0;
@@ -196,19 +220,30 @@ class Vector {
     }
 }
 
+// boundary class -------------------------------------------------------
+class CircleBoundary {
+    constructor(pos_, radius_, inverted_) { 
+        this.pos = new Vector2(pos_.x, pos_.y);
+        this.radius = radius_;
+        this.inverted = inverted_;
+    }
+}
+
 // scene -------------------------------------------------------
 
 var physicsScene = 
     {
         gravity : new Vector2(0.0, -9.81),
         dt : 1.0 / 60.0,
-        numSteps : 20,
+        numSteps : 10,
         paused : false,
-        numRows:  1,       
-        numColumns:  1,
+        numRows:  35,       
+        numColumns:  35,
         numParticles: 0,
         boundaryCenter: new Vector2(0.0, 0.0),
-        boundaryRadius: 0.0
+        boundaryRadius: 0.0,
+        boundaries: null,
+        rotation_angle: 0.0
     };
 
 var particleRadius = 0.01;
@@ -217,7 +252,7 @@ var mu_s = 0.2; // static friction
 var mu_k = 0.2; // dynamic friction
 var e = 0.2; // restitution
 
-var maxParticles = 1000;
+var maxParticles = 10000;
 
 var particles = {
     pos : new Float32Array(2 * maxParticles),
@@ -235,7 +270,10 @@ function setupScene()
     var particleDiameter = 2*particleRadius;
 
     if(physicsScene.numColumns*physicsScene.numRows > maxParticles)
+    {
+        alert("Too many particles, please increase maxPariticles value")
         return;
+    }
 
     physicsScene.radius = simMinWidth * 0.05;
     physicsScene.paused = true;
@@ -246,8 +284,8 @@ function setupScene()
     var offsetX = physicsScene.boundaryCenter.x - physicsScene.numColumns*particleDiameter*0.5;
     var offsetY = physicsScene.boundaryCenter.y + physicsScene.numRows*particleDiameter*0.5;
 
-    offsetX += particleRadius * 50;
-    offsetY -= particleRadius * 10;
+    //offsetX += particleRadius * 50;
+    //offsetY -= particleRadius * 50;
 
     var idx = 0;
     for (var y = 0; y < physicsScene.numRows; y++) {
@@ -266,6 +304,26 @@ function setupScene()
     }
     physicsScene.numParticles = physicsScene.numColumns * physicsScene.numRows;
 
+    // add some more boundaries
+    physicsScene.boundaries = new Array();
+    physicsScene.boundaries.push(new CircleBoundary(physicsScene.boundaryCenter,
+        physicsScene.boundaryRadius, true));
+
+    var num_boundaries = 5;
+    var delta_angle = 360 / num_boundaries;
+    var smallBoundaryRadius = 0.25*physicsScene.boundaryRadius;
+    var bpos = new Vector2(0,0);
+    for(var i=0;i<num_boundaries;++i)
+    {
+        var rot_m = Mat2.rotation(delta_angle*i*Math.PI/180.0)
+        bpos.x = physicsScene.boundaryRadius;
+        bpos.y = 0;
+        bpos.rotate(rot_m);
+        bpos.x += physicsScene.boundaryCenter.x;
+        bpos.y += physicsScene.boundaryCenter.y;
+        physicsScene.boundaries.push(new CircleBoundary(bpos, smallBoundaryRadius, false));
+    }
+
     initNeighborsHash();
     constraints.clear();
 
@@ -273,6 +331,7 @@ function setupScene()
     doc.getElementById("aforce").innerHTML = 0.0.toFixed(3);		
     doc.getElementById("mu_s_slider").setAttribute("value", 100*mu_s);		
     doc.getElementById("mu_k_slider").setAttribute("value", 100*mu_k);		
+    doc.getElementById("mu_k").innerHTML = mu_k;
 }
 
 // draw -------------------------------------------------------
@@ -298,7 +357,7 @@ function draw()
 {
     c.clearRect(0, 0, canvas.width, canvas.height);
 
-    c.fillStyle = "#FF0000";
+    c.fillStyle = "#FF8800";
     c.lineWidth = 2.0;
 
     for(var i=0;i<physicsScene.numParticles; ++i)
@@ -312,73 +371,110 @@ function draw()
 
     drawCircleV(physicsScene.boundaryCenter, physicsScene.boundaryRadius, false);
 
-    c.fillStyle = "#00FF00";
+    c.fillStyle = "#5555FF";
+
+    for(var i=1;i<physicsScene.boundaries.length;++i)
+    {
+        var x = physicsScene.boundaries[i].pos.x;
+        var y = physicsScene.boundaries[i].pos.y;
+        var r = physicsScene.boundaries[i].radius;
+        drawCircle(x, y, r, true);
+    }
 }
 
 // ------------------------------------------------
-function solveBoundaryConstraint()
-{
-    var br = physicsScene.boundaryRadius - particleRadius;
-    var bc = physicsScene.boundaryCenter;
 
-    var dir = new Vector2(0,0);
+
+function calcFriction(dp, n, dist, frict)
+{
+    var dp_n = new Vector2(0,0);
+    var dp_t = new Vector2(0,0);
+
+    // perp projection
+    var proj = dp.dot(n);
+    dp_n.add(n, proj);
+
+    dp_t.subtractVectors(dp, dp_n);
+    var dp_t_len = dp_t.length();
+    // part of velocity update pass
+
+    if (dp_t_len < mu_s * dist) {
+        frict.x = dp_t.x;
+        frict.y = dp_t.y;
+    }
+    else {
+        // 0/0 = NaN, so avoid it
+        var k = mu_k == 0 ? 0 : Math.min(mu_k * dist / dp_t_len, 1);
+        frict.x = k * dp_t.x;
+        frict.y = k * dp_t.y;
+    }
+}
+
+// ------------------------------------------------
+
+function solveBoundaryConstraint(is_stab)
+{
+    //var br = physicsScene.boundaryRadius - particleRadius;
+    //var bc = physicsScene.boundaryCenter;
+
+    var n = new Vector2(0,0);
     var pi = new Vector2(0,0);
     var dp = new Vector2(0,0);
     var dp_n = new Vector2(0,0);
     var dp_t = new Vector2(0,0);
     var path = new Vector2(0,0);
+    var frict = new Vector2(0,0);
     for(var i=0;i<physicsScene.numParticles; ++i)
     {
         pi.x = particles.pos[2*i + 0];
         pi.y = particles.pos[2*i + 1];
 
-        dir.subtractVectors(bc, pi);
-        var d = dir.length();
-        dir.scale(1/d);
-        var C = br - d;
-        if(C < 0)
-        {
-            dp.x = 0;
-            dp.y = 0;
-            dp.add(dir, -C);
+        for(var j=0;j<physicsScene.boundaries.length;++j) {
 
-            // static friction
+            var inv = physicsScene.boundaries[j].inverted;
+            var br = physicsScene.boundaries[j].radius - (inv ? particleRadius : -particleRadius);
+            var bc = physicsScene.boundaries[j].pos;
 
-            // corrected pos minus old pos
-            path.x = (particles.pos[2 * i + 0] + dp.x - particles.prev[2 * i + 0]);
-            path.y = (particles.pos[2 * i + 1] + dp.y - particles.prev[2 * i + 1]);
-
-            // perp projection
-            var proj = path.dot(dir);
-            dp_n.add(dir, proj);
-
-            dp_t.subtractVectors(path, dp_n);
-            var dp_t_len = dp_t.length();
-            // part of velocity update pass
-
-            if (dp_t_len  < mu_s * dp) {
-                particles.pos[2*i + 0] -= dp_t.x;
-                particles.pos[2*i + 1] -= dp_t.y;
-            }
-            else{
-                var k = Math.min(mu_k * dp.length() / dp_t_len, 1);
-                particles.pos[2*i + 0] -= k*dp_t.x;
-                particles.pos[2*i + 1] -= k*dp_t.y;
+            n.subtractVectors(pi, bc);
+            var d = n.length();
+            n.scale(1 / d);
+            var C = d - br;
+            if(inv) {
+                n.scale(-1);
+                C = -C;
             }
 
-            doc.getElementById("dp_t_len").innerHTML = dp_t_len.toFixed(8);		
+            if (C < 0) {
+                dp.x = 0;
+                dp.y = 0;
+                dp.add(n, -C);
+                var dist = Math.abs(C);
 
-            particles.pos[2*i + 0] += dp.x;
-            particles.pos[2*i + 1] += dp.y;
+                particles.pos[2 * i + 0] += dp.x;
+                particles.pos[2 * i + 1] += dp.y;
 
+                // corrected pos minus old pos
+                path.x = (particles.pos[2 * i + 0] - particles.prev[2 * i + 0]);
+                path.y = (particles.pos[2 * i + 1] - particles.prev[2 * i + 1]);
 
+                calcFriction(path, n, dist, frict)
+                particles.pos[2 * i + 0] -= frict.x;
+                particles.pos[2 * i + 1] -= frict.y;
+
+                if(is_stab) {
+                    particles.prev[2 * i + 0] += dp.x - frict.x;
+                    particles.prev[2 * i + 1] += dp.y - frict.y;
+                }
+            }
         }
     }
 }
 
-function solveCollisionConstraints()
+function solveCollisionConstraints(is_stab)
 {
-    var dir = new Vector2(0,0);
+    var frict = new Vector2(0,0);
+    var path = new Vector2(0,0);
+    var n = new Vector2(0,0);
     for(var i=0;i<physicsScene.numParticles; ++i)
     {
         var px = particles.pos[2 * i];
@@ -394,21 +490,20 @@ function solveCollisionConstraints()
             if(id == i)
                 continue;
 
-            var nx = particles.pos[2 * id] - px;				
-            var ny = particles.pos[2 * id + 1] - py;
-            var d = Math.sqrt(nx * nx + ny * ny);
+            n.x = particles.pos[2 * id] - px;				
+            n.y = particles.pos[2 * id + 1] - py;
+            var d = n.length();
 
             if (d > 0) {
-                nx /= d;
-                ny /= d;
+                n.scale(1/d);
             }
 
             var C = 2*particleRadius - d;
             if(C > 0) {
                 // particles have same mass, so  w1/(w1+w2) = w2/(w1+w2) = 0.5
 
-                var dx = -0.5*C*nx;
-                var dy = -0.5*C*ny;
+                var dx = -0.5*C*n.x;
+                var dy = -0.5*C*n.y;
 
                 particles.pos[2 * i] += dx;
                 particles.pos[2 * i + 1 ]+= dy;
@@ -416,22 +511,36 @@ function solveCollisionConstraints()
                 particles.pos[2 * id] -= dx;				
                 particles.pos[2 * id + 1] -= dy;
 
-                //var temp = new Float32Array(particles.pos.length);
-                //for(n=0; n<temp.length;++n) {
-                //temp[n] = particles.pos[n];
-                //}
+            // corrected pos minus old pos
+                path.x = (particles.pos[2 * i + 0] - particles.prev[2 * i + 0]) -
+                (particles.pos[2 * id + 0] - particles.prev[2 * id + 0]);
 
+                path.y = (particles.pos[2 * i + 1] - particles.prev[2 * i + 1]) - 
+                (particles.pos[2 * id + 1] - particles.prev[2 * id + 1]);
+
+                var dist = C;
+                frict.x = frict.y = 0;
+                calcFriction(path, n, dist, frict)
+                particles.pos[2 * i + 0] -= 0.5*frict.x;
+                particles.pos[2 * i + 1] -= 0.5*frict.y;
+
+                particles.pos[2 * id + 0] += 0.5*frict.x;
+                particles.pos[2 * id + 1] += 0.5*frict.y;
+
+                if(is_stab) {
+                    particles.prev[2 * i + 0] += dx-0.5*frict.x;
+                    particles.prev[2 * i + 1] += dy-0.5 * frict.y;
+
+                    particles.prev[2 * id + 0] += -dx + 0.5 * frict.x;
+                    particles.prev[2 * id + 1] += -dy + 0.5 * frict.y;
+                }
+
+/*
                 // fill constraint for velocity pass
-                var dvx =0;// particles.vel[2 * i] - particles.vel[2 * id];
-                var dvy =0;// particles.vel[2 * i + 1] - particles.vel[2 * id + 1];
+                var dvx = particles.vel[2 * i] - particles.vel[2 * id];
+                var dvy = particles.vel[2 * i + 1] - particles.vel[2 * id + 1];
                 constraints.pushBack2();//i, id, C, dvx, dvy, nx, ny, mu_k, e);
-
-                //for(n=0; n<temp.length;++n) {
-                //if(temp[n]!=particles.pos[n]) {
-                //var fffff=0;
-                //	}
-                //}
-
+*/
             }
 
         }
@@ -554,6 +663,20 @@ function simulate()
     var pi = new Vector2(0,0);
     var pprevi = new Vector2(0,0);
 
+    var delta_angle = 120*physicsScene.dt;
+    var smallBoundaryRadius = 0.25*physicsScene.boundaryRadius;
+    var bpos = new Vector2(0,0);
+    var rot_m = Mat2.rotation(delta_angle*Math.PI/180.0)
+    for(var i=1;i<physicsScene.boundaries.length;++i)
+    {   bpos = physicsScene.boundaries[i].pos;
+        bpos.x -= physicsScene.boundaryCenter.x;
+        bpos.y -= physicsScene.boundaryCenter.y;
+        bpos.rotate(rot_m);
+        bpos.x += physicsScene.boundaryCenter.x;
+        bpos.y += physicsScene.boundaryCenter.y;
+        physicsScene.boundaries.pos = bpos;
+    }
+
     constraints.clear();
     findNeighbors();
 
@@ -573,8 +696,12 @@ function simulate()
             particles.pos[2 * i + 1] += vy * h;
         }
 
-        solveCollisionConstraints();
-        solveBoundaryConstraint();
+        var is_stab = false;
+        if(step<5)
+            is_stab = true;
+
+        solveCollisionConstraints(is_stab);
+        solveBoundaryConstraint(is_stab);
 
         //force = Math.abs(lambda / sdt / sdt);
 
