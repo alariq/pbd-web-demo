@@ -318,7 +318,7 @@ function setupScene()
     physicsScene.boundaries.push(new CircleBoundary(physicsScene.boundaryCenter,
         physicsScene.boundaryRadius, true));
 
-    var num_boundaries = 0;
+    var num_boundaries = 5;
     var delta_angle = 360 / num_boundaries;
     var smallBoundaryRadius = 0.25*physicsScene.boundaryRadius;
     var bpos = new Vector2(0,0);
@@ -800,8 +800,8 @@ function simulate()
         }
 
         var is_stab = false;
-        //if(step<5)
-        //   is_stab = true;
+        if(step<5)
+           is_stab = true;
 
         solveCollisionConstraints(is_stab);
         solveBoundaryConstraint(is_stab);
