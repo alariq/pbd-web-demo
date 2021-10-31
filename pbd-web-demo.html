@@ -60,6 +60,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	<button class="button" onclick="setupScene()">Restart</button>
 	<button class="button" onclick="run()">Run</button>
 	<button class="button" onclick="step()">Step</button>
+	<br>
     <span style = "margin: 0px 0px 0px 20px;">mu_s</span>
 		<td>
 			<input type = "range" min = "0" max = "100" value = "0" id = "mu_s_slider" class = "slider">
@@ -68,20 +69,35 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		<td>
 			<input type = "range" min = "0" max = "100" value = "0" id = "mu_k_slider" class = "slider">
 		</td>
+    <span style = "margin: 0px 0px 0px 20px;">restitution</span>
+		<td>
+			<input type = "range" min = "0" max = "100" value = "0" id = "e_slider" class = "slider">
+		</td>
+		<br>
+		<td>
+			<input type="checkbox" id="use_velocity_pass" value="huey" checked>
+			<label for="huey">Use velocity pass(enables restitution)</label>
+		</td>
 	<br>
-	PBD <span id = "force">0</span>  &emsp; Analytic <span id ="aforce">0</span>
-	<br>
-	dp_t_len: <span id = "dp_t_len">0</span> &emsp; mu_k: <span id = "mu_k">0</span> 
+	mu_s: <span id = "mu_s">0</span> &emsp; mu_k: <span id = "mu_k">0</span> &emsp; restitution: <span id = "e">0</span> 
 
 	<canvas id="myCanvas"></canvas>
 	
 	<script>
 		document.getElementById("mu_s_slider").oninput = function() {
 			mu_s = this.value / 100;	
+			document.getElementById("mu_s").innerHTML = mu_s;
 		}
 		document.getElementById("mu_k_slider").oninput = function() {
 			mu_k = this.value / 100;	
 			document.getElementById("mu_k").innerHTML = mu_k;
+		}
+		document.getElementById("e_slider").oninput = function() {
+			e = this.value / 100;	
+			document.getElementById("e").innerHTML = e;
+		}
+		document.getElementById("use_velocity_pass").onclick = function() {
+			use_velocity_pass = this.checked;
 		}
 		var cc = document.getElementById("myCanvas")
 		setupGlobals(cc, window, document);

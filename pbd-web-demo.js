@@ -10,7 +10,12 @@ var cScale = 1;//Math.min(canvas.width, canvas.height) / simMinWidth;
 var simWidth = 1;//canvas.width / cScale;
 var simHeight = 1;//canvas.height / cScale;
 
+
 var doc = null;
+
+var printError = function(error, explicit) {
+    console.log(`[${explicit ? 'EXPLICIT' : 'INEXPLICIT'}] ${error.name}: ${error.message}`);
+}
 
 function setupGlobals(canvas_, win, doc_) {
     canvas = canvas_;
@@ -127,7 +132,7 @@ class ConstraintsArray {
 
     constructor(size) { 
         this.Idx = new Int32Array(ConstraintsArray.IS*size); 
-        this.Data1 = new Float32Array(ConstraintsArray.DS*size); 
+        this.Data = new Float32Array(ConstraintsArray.DS*size); 
         this.maxSize = size;
         this.size = 0;
     }
@@ -136,14 +141,14 @@ class ConstraintsArray {
         this.size = 0;
     }
 
-    pushBack2(A, B, d, dvx, dvy, nx, ny, mu_k, e) {
+    pushBack(A, B, dvx, dvy, nx, ny, d_lambda_n, mu_k, e) {
         if (this.size >= this.maxSize) {
             this.maxSize *= 2;
             var oldIdx = this.Idx;
-            var oldData = this.Data1;
+            var oldData = this.Data;
 
             this.Idx = new Int32Array(ConstraintsArray.IS*this.maxSize); 
-            this.Data1 = new Float32Array(ConstraintsArray.ID*this.maxSize); 
+            this.Data = new Float32Array(ConstraintsArray.DS*this.maxSize); 
 
             for (var i = 0; i < oldIdx.length; ++i)
             {
@@ -151,7 +156,7 @@ class ConstraintsArray {
             }
             for (i = 0; i < oldData.length; ++i)
             {
-                this.Data1[i] = oldData[i];
+                this.Data[i] = oldData[i];
             }
         }
         var is = ConstraintsArray.IS;
@@ -159,13 +164,13 @@ class ConstraintsArray {
         this.Idx[is*this.size + 0] = A; 
         this.Idx[is*this.size + 1] = B; 
 
-        this.Data1[ds*this.size + 0] = d; 
-        this.Data1[ds*this.size + 1] = dvx; 
-        this.Data1[ds*this.size + 2] = dvy; 
-        this.Data1[ds*this.size + 3] = nx; 
-        this.Data1[ds*this.size + 4] = ny; 
-        this.Data1[ds*this.size + 5] = mu_k; 
-        this.Data1[ds*this.size + 6] = e; 
+        this.Data[ds*this.size + 0] = dvx; 
+        this.Data[ds*this.size + 1] = dvy; 
+        this.Data[ds*this.size + 2] = nx; 
+        this.Data[ds*this.size + 3] = ny; 
+        this.Data[ds*this.size + 4] = d_lambda_n; 
+        this.Data[ds*this.size + 5] = mu_k; 
+        this.Data[ds*this.size + 6] = e; 
         this.size++;
     }
 
@@ -175,26 +180,26 @@ class ConstraintsArray {
     idxB(i) {
         return this.Idx[ConstraintsArray.IS*i + 1]; 
     }
-    d(i) {
-        return this.Data1[ConstraintsArray.DS*i + 0]; 
-    }
     dvx(i) {
-        return this.Data1[ConstraintsArray.DS*i + 1]; 
+        return this.Data[ConstraintsArray.DS*i + 0]; 
     }
     dvy(i) {
-        return this.Data1[ConstraintsArray.DS*i + 2]; 
+        return this.Data[ConstraintsArray.DS*i + 1]; 
     }
     nx(i) {
-        return this.Data1[ConstraintsArray.DS*i + 3]; 
+        return this.Data[ConstraintsArray.DS*i + 2]; 
     }
     ny(i) {
-        return this.Data1[ConstraintsArray.DS*i + 4]; 
+        return this.Data[ConstraintsArray.DS*i + 3]; 
+    }
+    d_lambda_n(i) {
+        return this.Data[ConstraintsArray.DS*i + 4]; 
     }
     mu_k(i) {
-        return this.Data1[ConstraintsArray.DS*i + 5]; 
+        return this.Data[ConstraintsArray.DS*i + 5]; 
     }
     e(i) {
-        return this.Data1[ConstraintsArray.DS*i + 6]; 
+        return this.Data[ConstraintsArray.DS*i + 6]; 
     }
 }
 
@@ -237,8 +242,8 @@ var physicsScene =
         dt : 1.0 / 60.0,
         numSteps : 10,
         paused : false,
-        numRows:  35,       
-        numColumns:  35,
+        numRows:  50,       
+        numColumns:  3,
         numParticles: 0,
         boundaryCenter: new Vector2(0.0, 0.0),
         boundaryRadius: 0.0,
@@ -251,6 +256,10 @@ var maxVel = 0.4 * particleRadius;
 var mu_s = 0.2; // static friction
 var mu_k = 0.2; // dynamic friction
 var e = 0.2; // restitution
+
+// if enabled, then using velocity pass as described in 
+// Detailed Rigid Body Sumulatio with Extended PBD
+var use_velocity_pass = false;
 
 var maxParticles = 10000;
 
@@ -309,7 +318,7 @@ function setupScene()
     physicsScene.boundaries.push(new CircleBoundary(physicsScene.boundaryCenter,
         physicsScene.boundaryRadius, true));
 
-    var num_boundaries = 5;
+    var num_boundaries = 0;
     var delta_angle = 360 / num_boundaries;
     var smallBoundaryRadius = 0.25*physicsScene.boundaryRadius;
     var bpos = new Vector2(0,0);
@@ -327,11 +336,13 @@ function setupScene()
     initNeighborsHash();
     constraints.clear();
 
-    doc.getElementById("force").innerHTML = 0.0.toFixed(3);		
-    doc.getElementById("aforce").innerHTML = 0.0.toFixed(3);		
     doc.getElementById("mu_s_slider").setAttribute("value", 100*mu_s);		
     doc.getElementById("mu_k_slider").setAttribute("value", 100*mu_k);		
+    doc.getElementById("e_slider").setAttribute("value", 100*e);		
     doc.getElementById("mu_k").innerHTML = mu_k;
+    doc.getElementById("mu_s").innerHTML = mu_s;
+    doc.getElementById("e").innerHTML = e;
+    doc.getElementById("use_velocity_pass").checked = use_velocity_pass;
 }
 
 // draw -------------------------------------------------------
@@ -384,9 +395,34 @@ function draw()
 
 // ------------------------------------------------
 
+function calcStaticFriction(dp, n, dist, frict)
+{
+    var dp_n = new Vector2(0,0);
+    var dp_t = new Vector2(0,0);
 
+    // perp projection
+    var proj = dp.dot(n);
+    dp_n.add(n, proj);
+
+    dp_t.subtractVectors(dp, dp_n);
+    var dp_t_len = dp_t.length();
+    // part of velocity update pass
+
+    if (dp_t_len < mu_s * dist) {
+        frict.x = dp_t.x;
+        frict.y = dp_t.y;
+    }
+}
+
+// calculated static & dynamic friction if not using velocity update pass
+// the way Unified Particle Physics describes it in 6.1
 function calcFriction(dp, n, dist, frict)
 {
+    if(use_velocity_pass) {
+        calcStaticFriction(dp, n, dist, frict);
+        return;
+    }
+
     var dp_n = new Vector2(0,0);
     var dp_t = new Vector2(0,0);
 
@@ -457,7 +493,16 @@ function solveBoundaryConstraint(is_stab)
                 path.x = (particles.pos[2 * i + 0] - particles.prev[2 * i + 0]);
                 path.y = (particles.pos[2 * i + 1] - particles.prev[2 * i + 1]);
 
+
                 calcFriction(path, n, dist, frict)
+
+                if (use_velocity_pass) {
+                    var dvx = particles.vel[2 * i] - 0;
+                    var dvy = particles.vel[2 * i + 1] - 0;
+                    var d_lambda_n = dist;//path.dot(n);
+                    constraints.pushBack(i, -1, dvx, dvy, n.x, n.y, d_lambda_n, mu_k, e);
+                }
+
                 particles.pos[2 * i + 0] -= frict.x;
                 particles.pos[2 * i + 1] -= frict.y;
 
@@ -490,8 +535,8 @@ function solveCollisionConstraints(is_stab)
             if(id == i)
                 continue;
 
-            n.x = particles.pos[2 * id] - px;				
-            n.y = particles.pos[2 * id + 1] - py;
+            n.x = px - particles.pos[2 * id];				
+            n.y = py - particles.pos[2 * id + 1];
             var d = n.length();
 
             if (d > 0) {
@@ -502,8 +547,8 @@ function solveCollisionConstraints(is_stab)
             if(C > 0) {
                 // particles have same mass, so  w1/(w1+w2) = w2/(w1+w2) = 0.5
 
-                var dx = -0.5*C*n.x;
-                var dy = -0.5*C*n.y;
+                var dx = 0.5*C*n.x;
+                var dy = 0.5*C*n.y;
 
                 particles.pos[2 * i] += dx;
                 particles.pos[2 * i + 1 ]+= dy;
@@ -511,10 +556,9 @@ function solveCollisionConstraints(is_stab)
                 particles.pos[2 * id] -= dx;				
                 particles.pos[2 * id + 1] -= dy;
 
-            // corrected pos minus old pos
+                // corrected pos minus old pos
                 path.x = (particles.pos[2 * i + 0] - particles.prev[2 * i + 0]) -
                 (particles.pos[2 * id + 0] - particles.prev[2 * id + 0]);
-
                 path.y = (particles.pos[2 * i + 1] - particles.prev[2 * i + 1]) - 
                 (particles.pos[2 * id + 1] - particles.prev[2 * id + 1]);
 
@@ -523,26 +567,24 @@ function solveCollisionConstraints(is_stab)
                 calcFriction(path, n, dist, frict)
                 particles.pos[2 * i + 0] -= 0.5*frict.x;
                 particles.pos[2 * i + 1] -= 0.5*frict.y;
-
                 particles.pos[2 * id + 0] += 0.5*frict.x;
                 particles.pos[2 * id + 1] += 0.5*frict.y;
 
                 if(is_stab) {
                     particles.prev[2 * i + 0] += dx-0.5*frict.x;
                     particles.prev[2 * i + 1] += dy-0.5 * frict.y;
-
                     particles.prev[2 * id + 0] += -dx + 0.5 * frict.x;
                     particles.prev[2 * id + 1] += -dy + 0.5 * frict.y;
                 }
 
-/*
-                // fill constraint for velocity pass
-                var dvx = particles.vel[2 * i] - particles.vel[2 * id];
-                var dvy = particles.vel[2 * i + 1] - particles.vel[2 * id + 1];
-                constraints.pushBack2();//i, id, C, dvx, dvy, nx, ny, mu_k, e);
-*/
+                if (use_velocity_pass) {
+                    // fill constraint for velocity pass
+                    var dvx = particles.vel[2 * i] - particles.vel[2 * id];
+                    var dvy = particles.vel[2 * i + 1] - particles.vel[2 * id + 1];
+                    var d_lambda_n = 0.5 * path.dot(n);
+                    constraints.pushBack(i, id, dvx, dvy, n.x, n.y, d_lambda_n, mu_k, e);
+                }
             }
-
         }
     }
 
@@ -641,9 +683,70 @@ function findNeighbors()
 }
 
 // ------------------------------------------------
-
-function velocityUpdate()
+var very_small_float = 1e-6;
+function velocityUpdate(h)
 {
+    //var mu_k; 
+    //var e; 
+    var v = new Vector2(0,0);
+    var vprev = new Vector2(0,0);
+    var n = new Vector2(0,0);
+    var dv = new Vector2(0,0);
+    var vt = new Vector2(0,0);
+    for (var i = 0; i < constraints.size; i++) {
+        var idA = constraints.idxA(i);
+        var idB = constraints.idxB(i);
+
+        // relative velocity
+        v.x = particles.vel[2*idA + 0];
+        v.y = particles.vel[2*idA + 1];
+        v.x -= idB==-1 ? 0 : particles.vel[2*idB + 0];
+        v.y -= idB==-1 ? 0 : particles.vel[2*idB + 1];
+
+        // previous relative velocity
+        vprev.x = constraints.dvx(i);
+        vprev.y = constraints.dvy(i);
+
+        n.x = constraints.nx(i);
+        n.y = constraints.ny(i);
+        var d_lambda_n = constraints.d_lambda_n(i);
+
+        var vn = n.dot(v);
+        vt.x = v.x - vn * n.x;
+        vt.y = v.y - vn * n.y;
+
+		// friction force (dynamic friction)
+		var vt_len = vt.length();
+		var fn = Math.abs(d_lambda_n / (h * h));
+		// Eq. 30
+        if(vt_len > very_small_float) {
+            dv.x = -(vt.x / vt_len) * Math.min(h * mu_k * fn, vt_len)
+            dv.y = -(vt.y / vt_len) * Math.min(h * mu_k * fn, vt_len)
+        } else {
+           dv.x = dv.y = 0; 
+        }
+
+		// restitution, Eq. 34
+		var v_prev_n = vprev.dot(n);
+        // !NB: original paper has: min() but probably it is an error
+		var restitution_x = n.x * (-vn + Math.max(-e * v_prev_n, 0.0));
+		var restitution_y = n.y * (-vn + Math.max(-e * v_prev_n, 0.0));
+
+		// now, apply delta velocity
+		// NOTE: probably should first apply dv and then calculate restitution_dv and
+		// apply it again?
+		var w1 = 1;
+		var w2 = idB==-1 ? 0.0 : 1;
+
+		particles.vel[2*idA + 0] += (dv.x + restitution_x) * w1 / (w1 + w2) ;
+		particles.vel[2*idA + 1] += (dv.y + restitution_y) * w1 / (w1 + w2) ;
+		if (idB != -1) {
+			restitution_x = n.x * (-vn + Math.max(-e * v_prev_n, 0.0));
+			restitution_y = n.y * (-vn + Math.max(-e * v_prev_n, 0.0));
+		    particles.vel[2*idB + 0] -= (dv.x + restitution_x) * w2 / (w1 + w2) ;
+		    particles.vel[2*idB + 1] -= (dv.y + restitution_y) * w2 / (w1 + w2) ;
+		}
+    }
 
 }
 
@@ -697,8 +800,8 @@ function simulate()
         }
 
         var is_stab = false;
-        if(step<5)
-            is_stab = true;
+        //if(step<5)
+        //   is_stab = true;
 
         solveCollisionConstraints(is_stab);
         solveBoundaryConstraint(is_stab);
@@ -716,17 +819,17 @@ function simulate()
 
             vi.subtractVectors(pi, pprevi);
             vi.scale(1.0 / h);
+            if(Number.isNaN(vi.x) || Number.isNaN(vi.y)) {
+                //alert("Nan");
+                vi.x = 0;
+            }
 
             particles.vel[2 * i + 0] = vi.x;
             particles.vel[2 * i + 1] = vi.y;
         }
 
-        velocityUpdate();
-
-        //analyticForce = physicsScene.analyticBead.simulate(sdt, -physicsScene.gravity.y);
+        velocityUpdate(h);
     }
-
-    document.getElementById("force").innerHTML = force.toFixed(3);		
 }
 
 // --------------------------------------------------------
@@ -742,9 +845,17 @@ function step() {
 }
 
 function update() {
-    simulate();
-    draw();
-    requestAnimationFrame(update);
+    try {
+        simulate();
+        draw();
+        requestAnimationFrame(update);
+    } catch(err) {
+        if (err instanceof TypeError) {
+            printError(err, true);
+        } else {
+            printError(err, false);
+        }
+    }
 }
 
 //setupScene();
