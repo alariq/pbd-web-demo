@@ -242,8 +242,8 @@ var physicsScene =
         dt : 1.0 / 60.0,
         numSteps : 10,
         paused : false,
-        numRows:  50,       
-        numColumns:  3,
+        numRows:  25,       
+        numColumns:  25,
         numParticles: 0,
         boundaryCenter: new Vector2(0.0, 0.0),
         boundaryRadius: 0.0,
@@ -275,7 +275,6 @@ var constraints = new ConstraintsArray(1);
 
 function setupScene() 
 {
-    // init particle positions
     var particleDiameter = 2*particleRadius;
 
     if(physicsScene.numColumns*physicsScene.numRows > maxParticles)
@@ -296,6 +295,7 @@ function setupScene()
     //offsetX += particleRadius * 50;
     //offsetY -= particleRadius * 50;
 
+    // init particle positions
     var idx = 0;
     for (var y = 0; y < physicsScene.numRows; y++) {
         for (var x = 0; x < physicsScene.numColumns; x++) {
@@ -312,6 +312,7 @@ function setupScene()
         }
     }
     physicsScene.numParticles = physicsScene.numColumns * physicsScene.numRows;
+
 
     // add some more boundaries
     physicsScene.boundaries = new Array();
@@ -343,6 +344,8 @@ function setupScene()
     doc.getElementById("mu_s").innerHTML = mu_s;
     doc.getElementById("e").innerHTML = e;
     doc.getElementById("use_velocity_pass").checked = use_velocity_pass;
+    doc.getElementById("cols").innerHTML = physicsScene.numColumns;
+    doc.getElementById("rows").innerHTML = physicsScene.numRows;
 }
 
 // draw -------------------------------------------------------
